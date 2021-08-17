@@ -10,7 +10,7 @@ func main() {
 	//
 	// Connect to the Neo4j server
 	//
-	db, _ := neoism.Connect("http://localhost:7687/db/data")
+	db, _ := neoism.Connect("http://192.168.10.10:7687/db/data")
 	kirk := "Captain Kirk"
 	mccoy := "Dr McCoy"
 	//
