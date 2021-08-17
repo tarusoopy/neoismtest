@@ -1,32 +1,85 @@
 package main
 
-import "fmt"
-
 import (
 	"fmt"
 	"github.com/jmcvetta/neoism"
 )
 
 func main() {
-	db, _ := neoism.Connect("http://localhost:7474")
-
-	// ルートnodeを作成
-	rootnode, _ := db.CreateNode(neoism.Props{"word": "テスト", "url": "http://www.test.com"})
-	//defer newnode.Delete()
-
-	// リレーション用ノードを作成
-	relnode1, _ := db.CreateNode(neoism.Props{"word": "テスト1", "url": "http://www.test1.com"})
-	relnode2, _ := db.CreateNode(neoism.Props{"word": "テスト2", "url": "http://www.test2.com"})
-	relnode3, _ := db.CreateNode(neoism.Props{"word": "テスト3", "url": "http://www.test3.com"})
-	relnode4, _ := db.CreateNode(neoism.Props{"word": "テスト4", "url": "http://www.test4.com"})
-	relnode5, _ := db.CreateNode(neoism.Props{"word": "テスト5", "url": "http://www.test5.com"})
-
-	fmt.Println(newnode.Id())
-
-	// ルートノードにリレーション用ノードを関連付ける
-	newnode.Relate("ConnectTo", relnode1.Id(), neoism.Props{})
-	newnode.Relate("ConnectTo", relnode2.Id(), neoism.Props{})
-	newnode.Relate("ConnectTo", relnode3.Id(), neoism.Props{})
-	newnode.Relate("ConnectTo", relnode4.Id(), neoism.Props{})
-	newnode.Relate("ConnectTo", relnode5.Id(), neoism.Props{})
+	// No error handling in this example - bad, bad, bad!
+	//
+	// Connect to the Neo4j server
+	//
+	db, _ := neoism.Connect("http://localhost:7474/db/data")
+	kirk := "Captain Kirk"
+	mccoy := "Dr McCoy"
+	//
+	// Create a node
+	//
+	n0, _ := db.CreateNode(neoism.Props{"name": kirk})
+	defer n0.Delete()     // Deferred clean up
+	n0.AddLabel("Person") // Add a label
+	//
+	// Create a node with a Cypher query
+	//
+	res0 := []struct {
+		N neoism.Node // Column "n" gets automagically unmarshalled into field N
+	}{}
+	cq0 := neoism.CypherQuery{
+		Statement: "CREATE (n:Person {name: {name}}) RETURN n",
+		// Use parameters instead of constructing a query string
+		Parameters: neoism.Props{"name": mccoy},
+		Result:     &res0,
+	}
+	db.Cypher(&cq0)
+	n1 := res0[0].N // Only one row of data returned
+	n1.Db = db      // Must manually set Db with objects returned from Cypher query
+	//
+	// Create a relationship
+	//
+	n1.Relate("reports to", n0.Id(), neoism.Props{}) // Empty Props{} is okay
+	//
+	// Issue a query
+	//
+	res1 := []struct {
+		A   string `json:"a.name"` // `json` tag matches column name in query
+		Rel string `json:"type(r)"`
+		B   string `json:"b.name"`
+	}{}
+	cq1 := neoism.CypherQuery{
+		// Use backticks for long statements - Cypher is whitespace indifferent
+		Statement: `
+			MATCH (a:Person)-[r]->(b)
+			WHERE a.name = {name}
+			RETURN a.name, type(r), b.name
+		`,
+		Parameters: neoism.Props{"name": mccoy},
+		Result:     &res1,
+	}
+	db.Cypher(&cq1)
+	r := res1[0]
+	fmt.Println(r.A, r.Rel, r.B)
+	//
+	// Clean up using a transaction
+	//
+	qs := []*neoism.CypherQuery{
+		&neoism.CypherQuery{
+			Statement: `
+				MATCH (n:Person)-[r]->()
+				WHERE n.name = {name}
+				DELETE r
+			`,
+			Parameters: neoism.Props{"name": mccoy},
+		},
+		&neoism.CypherQuery{
+			Statement: `
+				MATCH (n:Person)
+				WHERE n.name = {name}
+				DELETE n
+			`,
+			Parameters: neoism.Props{"name": mccoy},
+		},
+	}
+	tx, _ := db.Begin(qs)
+	tx.Commit()
 }
